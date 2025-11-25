@@ -7,6 +7,7 @@ import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import ProductDetail from "./pages/ProductDetail";
 import AddListing from "./pages/AddListing";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function ProtectedRoute({ children }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -50,6 +51,14 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -61,6 +70,5 @@ export default App;
 {
   /*<Route path="/marketplace" element={<MarketplacePage />} />
 <Route path="/chat/:userId" element={<ChatPage />} />
-<Route path="/admin" element={<AdminDashboardPage />} />
 <Route path="*" element={<NotFoundPage />} /> */
 }
