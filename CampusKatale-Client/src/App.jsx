@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import ProductDetail from "./pages/ProductDetail";
 import AddListing from "./pages/AddListing";
 import AdminDashboard from "./pages/AdminDashboard";
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 
 function ProtectedRoute({ children }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -51,11 +52,14 @@ function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/admin"
         element={
           <ProtectedRoute>
-            <AdminDashboard />
+            <ProtectedAdminRoute>
+              <AdminDashboard />
+            </ProtectedAdminRoute>
           </ProtectedRoute>
         }
       />
@@ -66,9 +70,3 @@ function App() {
 }
 
 export default App;
-
-{
-  /*<Route path="/marketplace" element={<MarketplacePage />} />
-<Route path="/chat/:userId" element={<ChatPage />} />
-<Route path="*" element={<NotFoundPage />} /> */
-}

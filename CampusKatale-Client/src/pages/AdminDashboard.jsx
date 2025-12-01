@@ -19,7 +19,7 @@ function AdminDashboard() {
         setError(null);
         const res = await axios.get(API);
         
-        // Ensure we have the expected data structure
+        // Ensure to get the expected data structure
         if (res.data && typeof res.data === 'object') {
           setStats({
             users: Number(res.data.users) || 0,
