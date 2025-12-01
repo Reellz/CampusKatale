@@ -47,7 +47,7 @@ function Auth() {
 
         if (result.status === "complete") {
           clearFields();
-          navigate("/dashboard");
+          navigate("/");
         } else {
           setError("Login incomplete. Please try again.");
         }
@@ -61,7 +61,7 @@ function Auth() {
 
         if (result.status === "complete") {
           clearFields();
-          navigate("/dashboard");
+          navigate("/");
         } else {
           console.log("Sign-up next step:", result);
           setError("Signup incomplete. Please try again.");
@@ -80,12 +80,12 @@ function Auth() {
       if (isLogin && signInLoaded) {
         await signIn.authenticateWithRedirect({
           strategy: provider,
-          redirectUrl: "/dashboard",
+          redirectUrl: "/",
         });
       } else if (signUpLoaded) {
         await signUp.authenticateWithRedirect({
           strategy: provider,
-          redirectUrl: "/dashboard",
+          redirectUrl: "/",
         });
       }
     } catch (err) {
@@ -96,7 +96,7 @@ function Auth() {
 
   const goHome = () => navigate("/");
 
-  if (isSignedIn) navigate("/dashboard");
+  if (isSignedIn) navigate("/");
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] font-[Lexend]">
