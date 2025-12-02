@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 
-const API = "http://localhost:1337/api/stats";
+const API = "https://campuskatale-fwih.onrender.com/api/stats";
 
 function AdminDashboard() {
   const [stats, setStats] = useState({
