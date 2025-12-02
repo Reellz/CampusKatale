@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 
-const API = "https://campuskatale-fwih.onrender.com/api/stats";
+const STRAPI_URL = import.meta.env.VITE_STRAPI_URL;
+const API = `${STRAPI_URL}/api/stats`;
 
 function AdminDashboard() {
   const [stats, setStats] = useState({
