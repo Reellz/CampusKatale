@@ -19,7 +19,7 @@
     "@clerk/express": "^1.7.42",
     "@strapi/plugin-cloud": "5.28.0",
     "@strapi/plugin-users-permissions": "5.28.0",
-    "@strapi/provider-upload-cloudinary": "^5.28.0",
+    "@strapi/provider-upload-cloudinary": "^5.36.1",
     "@strapi/strapi": "5.28.0",
     "better-sqlite3": "11.3.0",
     "jsonwebtoken": "^9.0.2",
