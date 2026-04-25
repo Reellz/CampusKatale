@@ -1,26 +1,25 @@
 "use strict";
 
 const { Webhook } = require("svix");
-const Clerk = require("@clerk/clerk-sdk-node").default;
+const { createClerkClient } = require("@clerk/clerk-sdk-node");
 
 module.exports = {
   async handle(ctx) {
-    const secret = process.env.CLERK_WEBHOOK_SECRET;
+    const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
+    const clerkSecretKey = process.env.CLERK_SECRET_KEY;
 
-    if (!secret) {
-      strapi.log.error("CLERK_WEBHOOK_SECRET is not set");
+    if (!webhookSecret || !clerkSecretKey) {
+      strapi.log.error("Missing CLERK_WEBHOOK_SECRET or CLERK_SECRET_KEY");
       ctx.status = 500;
-      ctx.body = { error: "Webhook secret not configured" };
+      ctx.body = { error: "Server misconfiguration" };
       return;
     }
 
-    // 1. Verify the request actually came from Clerk
-    const wh = new Webhook(secret);
+    // ── Step 1: Verify signature ──────────────────────────────────────────
+    const wh = new Webhook(webhookSecret);
     let event;
 
     try {
-      // Strapi gives us the raw body via ctx.request.body
-      // We need the raw string for svix verification
       const payload =
         typeof ctx.request.body === "string"
           ? ctx.request.body
@@ -32,13 +31,14 @@ module.exports = {
         "svix-signature": ctx.request.headers["svix-signature"],
       });
     } catch (err) {
-      strapi.log.error("Webhook signature verification failed:", err.message);
+      strapi.log.error("[STEP 1 FAILED] Signature verification:", err.message);
       ctx.status = 400;
       ctx.body = { error: "Invalid webhook signature" };
       return;
     }
 
-    // 2. Only handle user.created events
+    strapi.log.info("[STEP 1 OK] Signature verified");
+
     if (event.type !== "user.created") {
       ctx.status = 200;
       ctx.body = { message: "Event ignored" };
@@ -49,45 +49,77 @@ module.exports = {
     const intendedRole = unsafe_metadata?.intendedRole || "user";
     const primaryEmail = email_addresses?.[0]?.email_address || "";
 
-    strapi.log.info(`New user: ${clerkUserId} | Role: ${intendedRole}`);
+    strapi.log.info(`[STEP 2] Processing: ${clerkUserId} | role: ${intendedRole} | email: ${primaryEmail}`);
 
+    // ── Step 3: Init Clerk client ─────────────────────────────────────────
+    let clerk;
     try {
-      const clerk = Clerk({ secretKey: process.env.CLERK_SECRET_KEY });
+      clerk = createClerkClient({ secretKey: clerkSecretKey });
+      strapi.log.info("[STEP 3 OK] Clerk client initialized");
+    } catch (err) {
+      strapi.log.error("[STEP 3 FAILED] Clerk init:", err.message);
+      ctx.status = 500;
+      ctx.body = { error: "Internal server error" };
+      return;
+    }
 
-      // 3. Write trusted role to Clerk publicMetadata
+    // ── Step 4: Write publicMetadata ──────────────────────────────────────
+    try {
       await clerk.users.updateUserMetadata(clerkUserId, {
         publicMetadata: {
           role: intendedRole,
           vendorStatus: intendedRole === "vendor" ? "pending" : null,
         },
       });
+      strapi.log.info("[STEP 4 OK] Clerk publicMetadata updated");
+    } catch (err) {
+      strapi.log.error("[STEP 4 FAILED] Clerk metadata update:", err.message);
+      ctx.status = 500;
+      ctx.body = { error: "Internal server error" };
+      return;
+    }
 
-      // 4. If vendor, create a Strapi vendor record
-      if (intendedRole === "vendor") {
-        const existingVendors = await strapi.entityService.findMany(
-          "api::vendor.vendor",
-          {
-            filters: { clerkUserId },
-          }
-        );
+    // ── Step 5: Create vendor record (vendors only) ───────────────────────
+    if (intendedRole === "vendor") {
+      // Step 5a: Check for existing record
+      let existing;
+      try {
+        existing = await strapi.entityService.findMany("api::vendor.vendor", {
+          filters: { clerkUserId },
+        });
+        strapi.log.info(`[STEP 5a OK] Existing vendor check: ${existing.length} found`);
+      } catch (err) {
+        strapi.log.error("[STEP 5a FAILED] findMany:", err.message, err.stack);
+        ctx.status = 500;
+        ctx.body = { error: "Internal server error" };
+        return;
+      }
 
-        // Avoid duplicate vendor records
-        if (!existingVendors || existingVendors.length === 0) {
-          const vendor = await strapi.entityService.create(
-            "api::vendor.vendor",
-            {
-              data: {
-                clerkUserId,
-                storeName: primaryEmail.split("@")[0], // temp name until onboarding
-                status: "pending",
-                publishedAt: new Date(), // required for Strapi v4 content
-              },
-            }
-          );
+      if (existing.length === 0) {
+        // Step 5b: Create vendor record
+        let vendor;
+        try {
+          strapi.log.info("[STEP 5b] Creating vendor record...");
+          vendor = await strapi.entityService.create("api::vendor.vendor", {
+            data: {
+              clerkUserId,
+              storeName: primaryEmail.split("@")[0],
+              status: "pending",
+              publishedAt: new Date(),
+            },
+          });
+          strapi.log.info(`[STEP 5b OK] Vendor created: ID ${vendor.id}`);
+        } catch (err) {
+          strapi.log.error("[STEP 5b FAILED] entityService.create:", err.message);
+          strapi.log.error("Details:", JSON.stringify(err.details, null, 2));
+          strapi.log.error("Stack:", err.stack);
+          ctx.status = 500;
+          ctx.body = { error: "Internal server error" };
+          return;
+        }
 
-          strapi.log.info(`Vendor record created: ${vendor.id}`);
-
-          // 5. Store Strapi vendor ID back in Clerk
+        // Step 5c: Write vendorId back to Clerk
+        try {
           await clerk.users.updateUserMetadata(clerkUserId, {
             publicMetadata: {
               role: "vendor",
@@ -95,15 +127,19 @@ module.exports = {
               vendorId: vendor.id,
             },
           });
+          strapi.log.info(`[STEP 5c OK] Clerk vendorId set to ${vendor.id}`);
+        } catch (err) {
+          strapi.log.error("[STEP 5c FAILED] Clerk vendorId update:", err.message);
+          // Non-fatal — vendor record exists, just missing vendorId in Clerk
+          // Will be reconciled on next sign-in
         }
+      } else {
+        strapi.log.info("[STEP 5 SKIP] Vendor record already exists");
       }
-
-      ctx.status = 200;
-      ctx.body = { success: true };
-    } catch (err) {
-      strapi.log.error("Webhook handler error:", err.message);
-      ctx.status = 500;
-      ctx.body = { error: "Internal server error" };
     }
+
+    strapi.log.info("[DONE] Webhook handled successfully");
+    ctx.status = 200;
+    ctx.body = { success: true };
   },
 };
