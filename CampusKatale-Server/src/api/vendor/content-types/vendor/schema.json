@@ -1,0 +1,43 @@
+{
+  "kind": "collectionType",
+  "collectionName": "vendors",
+  "info": {
+    "singularName": "vendor",
+    "pluralName": "vendors",
+    "displayName": "Vendor"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "clerkUserId": {
+      "type": "string",
+      "required": true
+    },
+    "storeName": {
+      "type": "string",
+      "required": true
+    },
+    "storeDescription": {
+      "type": "richtext"
+    },
+    "contactPhone": {
+      "type": "string"
+    },
+    "vendorStatus": {
+      "type": "enumeration",
+      "default": "pending",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "products": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::product.product"
+    }
+  }
+}
