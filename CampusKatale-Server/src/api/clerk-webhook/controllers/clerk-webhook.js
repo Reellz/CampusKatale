@@ -4,6 +4,7 @@ const { Webhook } = require("svix");
 const { createClerkClient } = require("@clerk/clerk-sdk-node");
 
 module.exports = {
+  // ── Existing: handle user.created webhook from Clerk ───────────────────
   async handle(ctx) {
     const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
     const clerkSecretKey = process.env.CLERK_SECRET_KEY;
@@ -15,7 +16,6 @@ module.exports = {
       return;
     }
 
-    // ── Step 1: Verify signature ──────────────────────────────────────────
     const wh = new Webhook(webhookSecret);
     let event;
 
@@ -49,9 +49,8 @@ module.exports = {
     const intendedRole = unsafe_metadata?.intendedRole || "user";
     const primaryEmail = email_addresses?.[0]?.email_address || "";
 
-    strapi.log.info(`[STEP 2] Processing: ${clerkUserId} | role: ${intendedRole} | email: ${primaryEmail}`);
+    strapi.log.info(`[STEP 2] Processing: ${clerkUserId} | role: ${intendedRole}`);
 
-    // ── Step 3: Init Clerk client ─────────────────────────────────────────
     let clerk;
     try {
       clerk = createClerkClient({ secretKey: clerkSecretKey });
@@ -63,7 +62,6 @@ module.exports = {
       return;
     }
 
-    // ── Step 4: Write publicMetadata ──────────────────────────────────────
     try {
       await clerk.users.updateUserMetadata(clerkUserId, {
         publicMetadata: {
@@ -79,9 +77,7 @@ module.exports = {
       return;
     }
 
-    // ── Step 5: Create vendor record (vendors only) ───────────────────────
     if (intendedRole === "vendor") {
-      // Step 5a: Check for existing record
       let existing;
       try {
         existing = await strapi.entityService.findMany("api::vendor.vendor", {
@@ -89,17 +85,15 @@ module.exports = {
         });
         strapi.log.info(`[STEP 5a OK] Existing vendor check: ${existing.length} found`);
       } catch (err) {
-        strapi.log.error("[STEP 5a FAILED] findMany:", err.message, err.stack);
+        strapi.log.error("[STEP 5a FAILED] findMany:", err.message);
         ctx.status = 500;
         ctx.body = { error: "Internal server error" };
         return;
       }
 
       if (existing.length === 0) {
-        // Step 5b: Create vendor record
         let vendor;
         try {
-          strapi.log.info("[STEP 5b] Creating vendor record...");
           vendor = await strapi.entityService.create("api::vendor.vendor", {
             data: {
               clerkUserId,
@@ -112,13 +106,11 @@ module.exports = {
         } catch (err) {
           strapi.log.error("[STEP 5b FAILED] entityService.create:", err.message);
           strapi.log.error("Details:", JSON.stringify(err.details, null, 2));
-          strapi.log.error("Stack:", err.stack);
           ctx.status = 500;
           ctx.body = { error: "Internal server error" };
           return;
         }
 
-        // Step 5c: Write vendorId back to Clerk
         try {
           await clerk.users.updateUserMetadata(clerkUserId, {
             publicMetadata: {
@@ -129,17 +121,50 @@ module.exports = {
           });
           strapi.log.info(`[STEP 5c OK] Clerk vendorId set to ${vendor.id}`);
         } catch (err) {
-          strapi.log.error("[STEP 5c FAILED] Clerk vendorId update:", err.message);
-          // Non-fatal — vendor record exists, just missing vendorId in Clerk
-          // Will be reconciled on next sign-in
+          strapi.log.error("[STEP 5c FAILED]:", err.message);
         }
-      } else {
-        strapi.log.info("[STEP 5 SKIP] Vendor record already exists");
       }
     }
 
     strapi.log.info("[DONE] Webhook handled successfully");
     ctx.status = 200;
     ctx.body = { success: true };
+  },
+
+  // ── New: called by VendorOnboarding.jsx to mark onboarding complete ───
+  // Uses ADMIN_SECRET_KEY so secret Clerk keys stay on the server only
+  async updateMetadata(ctx) {
+    const adminKey = process.env.ADMIN_SECRET_KEY;
+    const clerkSecretKey = process.env.CLERK_SECRET_KEY;
+
+    // Verify the request is coming from our own frontend, not a random caller
+    const providedKey = ctx.request.headers["x-admin-key"];
+    if (!providedKey || providedKey !== adminKey) {
+      ctx.status = 403;
+      ctx.body = { error: "Forbidden" };
+      return;
+    }
+
+    const { clerkUserId, metadata } = ctx.request.body;
+
+    if (!clerkUserId || !metadata) {
+      ctx.status = 400;
+      ctx.body = { error: "clerkUserId and metadata are required" };
+      return;
+    }
+
+    try {
+      const clerk = createClerkClient({ secretKey: clerkSecretKey });
+      await clerk.users.updateUserMetadata(clerkUserId, {
+        publicMetadata: metadata,
+      });
+      strapi.log.info(`[updateMetadata] Updated metadata for ${clerkUserId}`);
+      ctx.status = 200;
+      ctx.body = { success: true };
+    } catch (err) {
+      strapi.log.error("[updateMetadata] Failed:", err.message);
+      ctx.status = 500;
+      ctx.body = { error: "Failed to update metadata" };
+    }
   },
 };

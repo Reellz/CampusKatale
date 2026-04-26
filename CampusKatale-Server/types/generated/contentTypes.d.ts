@@ -550,6 +550,7 @@ export interface ApiVendorVendor extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     products: Schema.Attribute.Relation<'oneToMany', 'api::product.product'>;
     publishedAt: Schema.Attribute.DateTime;
+    socialLinks: Schema.Attribute.JSON;
     storeDescription: Schema.Attribute.RichText;
     storeName: Schema.Attribute.String & Schema.Attribute.Required;
     updatedAt: Schema.Attribute.DateTime;
